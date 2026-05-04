@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PULSAR — Network Traffic Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:#0d0f0c;--surface:#131510;--surface2:#1a1e16;--border:#252b1f;
+    --green:#7fff5f;--green2:#3db81f;--amber:#f0b429;--red:#f05050;
+    --blue:#60c8ff;--purple:#c084fc;--text:#ccd8c0;--muted:#4a5a40;
+    --tcp-c:#60c8ff;--udp-c:#7fff5f;--icmp-c:#f0b429;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+  body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(to bottom,transparent 0px,transparent 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 4px);pointer-events:none;z-index:999;}
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 32px;height:58px;display:flex;align-items:center;justify-content:space-between;}
+  .brand{display:flex;align-items:center;gap:14px;}
+  .brand-icon{width:34px;height:34px;border:1.5px solid var(--green2);border-radius:6px;display:flex;align-items:center;justify-content:center;}
+  .brand-icon::after{content:'';width:10px;height:10px;background:var(--green);border-radius:50%;box-shadow:0 0 8px var(--green);animation:blink 2s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0.25}}
+  .brand h1{font-size:20px;font-weight:700;letter-spacing:5px;color:var(--green);text-shadow:0 0 20px rgba(127,255,95,0.25);}
+  .brand sub{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:2px;display:block;margin-top:-2px;}
+  .header-right{display:flex;align-items:center;gap:18px;}
+  .clock{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);}
+  .status-pill{font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 14px;border-radius:20px;border:1px solid var(--border);color:var(--muted);letter-spacing:1.5px;display:flex;align-items:center;gap:8px;transition:all .3s;}
+  .status-pill.live{border-color:var(--green2);color:var(--green);background:rgba(127,255,95,0.06);}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:background .3s;}
+  .status-pill.live .dot{background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 1s infinite;}
+  main{padding:20px 32px;display:flex;flex-direction:column;gap:14px;}
+  .controls{display:flex;gap:10px;}
+  .btn{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;letter-spacing:1px;padding:9px 20px;border-radius:5px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .18s;}
+  .btn:hover:not(:disabled){border-color:var(--green2);color:var(--green);}
+  .btn.go{border-color:var(--green2);color:var(--green);background:rgba(127,255,95,0.07);}
+  .btn.go:hover:not(:disabled){background:rgba(127,255,95,0.13);box-shadow:0 0 12px rgba(127,255,95,0.12);}
+  .btn.halt{border-color:rgba(240,80,80,0.4);color:var(--red);}
+  .btn.halt:hover:not(:disabled){background:rgba(240,80,80,0.08);}
+  .btn:disabled{opacity:0.28;cursor:not-allowed;}
+  .stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;position:relative;overflow:hidden;}
+  .stat::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;}
+  .s-tot::after{background:var(--green);}
+  .s-tcp::after{background:var(--tcp-c);}
+  .s-udp::after{background:var(--udp-c);}
+  .s-icmp::after{background:var(--icmp-c);}
+  .s-sz::after{background:var(--purple);}
+  .slabel{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;}
+  .snum{font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:600;line-height:1;}
+  .s-tot .snum{color:var(--green);}
+  .s-tcp .snum{color:var(--tcp-c);}
+  .s-udp .snum{color:var(--udp-c);}
+  .s-icmp .snum{color:var(--icmp-c);}
+  .s-sz .snum{color:var(--purple);}
+  .sunit{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-top:5px;}
+  .filter-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;}
+  .flabel{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--green2);margin-bottom:12px;text-transform:uppercase;}
+  .filter-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+  .fgroup{display:flex;flex-direction:column;gap:5px;flex:1;min-width:130px;}
+  .fgroup label{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
+  .fgroup select,.fgroup input{background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;transition:border-color .2s;width:100%;}
+  .fgroup select:focus,.fgroup input:focus{border-color:var(--green2);}
+  .fgroup select option{background:#131510;}
+  .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .tbar{padding:11px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+  .ttitle{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--green2);text-transform:uppercase;}
+  .rcnt{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);}
+  .tscroll{max-height:400px;overflow:auto;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);background:var(--surface2);position:sticky;top:0;z-index:1;text-align:left;white-space:nowrap;}
+  tbody tr{border-bottom:1px solid rgba(37,43,31,.6);transition:background .12s;}
+  tbody tr:hover{background:rgba(127,255,95,0.025);}
+  tbody tr:last-child{border-bottom:none;}
+  td{padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);white-space:nowrap;}
+  td.t-time{color:var(--muted);}
+  td.t-ip{color:#80b8ff;}
+  td.t-port{color:var(--muted);font-size:11px;}
+  td.t-size{color:var(--purple);}
+  .proto{display:inline-block;padding:2px 9px;border-radius:3px;font-size:10px;letter-spacing:.5px;font-weight:500;}
+  .proto.TCP{background:rgba(96,200,255,.1);color:var(--tcp-c);border:1px solid rgba(96,200,255,.22);}
+  .proto.UDP{background:rgba(127,255,95,.1);color:var(--udp-c);border:1px solid rgba(127,255,95,.22);}
+  .proto.ICMP{background:rgba(240,180,41,.1);color:var(--icmp-c);border:1px solid rgba(240,180,41,.22);}
+  .svc{display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;background:rgba(192,132,252,.08);color:var(--purple);border:1px solid rgba(192,132,252,.18);}
+  .log-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .log-head{padding:10px 18px;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--green2);text-transform:uppercase;}
+  .log-body{padding:10px 14px;max-height:150px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:11px;}
+  .logline{display:flex;gap:14px;padding:3px 0;border-bottom:1px solid rgba(37,43,31,.5);}
+  .logts{color:var(--muted);min-width:68px;}
+  .logtxt.ok{color:var(--green);}
+  .logtxt.warn{color:var(--amber);}
+  .logtxt.info{color:var(--blue);}
+  .empty{text-align:center;padding:50px 0;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);}
+  ::-webkit-scrollbar{width:5px;height:5px;}
+  ::-webkit-scrollbar-track{background:var(--surface);}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+  @media(max-width:860px){.stats-row{grid-template-columns:repeat(3,1fr);}main{padding:14px;}header{padding:0 14px;}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="brand-icon"></div>
+    <div><h1>PULSAR</h1><sub>NETWORK TRAFFIC MONITOR v1.0</sub></div>
+  </div>
+  <div class="header-right">
+    <span class="clock" id="clock">--:--:--</span>
+    <div class="status-pill" id="sPill"><div class="dot" id="dot"></div><span id="sTxt">OFFLINE</span></div>
+  </div>
+</header>
+<main>
+  <div class="controls">
+    <button class="btn go"   id="btnStart" onclick="startMon()">▶ START MONITORING</button>
+    <button class="btn halt" id="btnStop"  onclick="stopMon()" disabled>■ STOP</button>
+    <button class="btn"      onclick="clearAll()">✕ CLEAR DATA</button>
+  </div>
+  <div class="stats-row">
+    <div class="stat s-tot"><div class="slabel">Total Packets</div><div class="snum" id="sT">0</div><div class="sunit">captured</div></div>
+    <div class="stat s-tcp"><div class="slabel">TCP</div><div class="snum" id="sTC">0</div><div class="sunit">packets</div></div>
+    <div class="stat s-udp"><div class="slabel">UDP</div><div class="snum" id="sUD">0</div><div class="sunit">packets</div></div>
+    <div class="stat s-icmp"><div class="slabel">ICMP</div><div class="snum" id="sIC">0</div><div class="sunit">packets</div></div>
+    <div class="stat s-sz"><div class="slabel">Avg Size</div><div class="snum" id="sAV">0</div><div class="sunit">bytes / packet</div></div>
+  </div>
+  <div class="filter-box">
+    <div class="flabel">▼ Filter Traffic</div>
+    <div class="filter-row">
+      <div class="fgroup"><label>Protocol</label>
+        <select id="fP"><option value="ALL">ALL</option><option value="TCP">TCP</option><option value="UDP">UDP</option><option value="ICMP">ICMP</option></select>
+      </div>
+      <div class="fgroup"><label>Source IP</label><input type="text" id="fS" placeholder="e.g. 192.168.1.5"/></div>
+      <div class="fgroup"><label>Destination IP</label><input type="text" id="fD" placeholder="e.g. 8.8.8.8"/></div>
+      <div style="display:flex;gap:8px;align-self:flex-end;">
+        <button class="btn go" style="padding:8px 16px;" onclick="applyF()">APPLY</button>
+        <button class="btn"    style="padding:8px 16px;" onclick="resetF()">RESET</button>
+      </div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <div class="tbar">
+      <span class="ttitle">▸ Packet Capture Log</span>
+      <span class="rcnt" id="rcnt">0 records</span>
+    </div>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Time</th><th>Source IP</th><th>Src Port</th><th>Destination IP</th><th>Dst Port</th><th>Protocol</th><th>Service</th><th>Size (B)</th></tr></thead>
+        <tbody id="tBody"><tr><td colspan="8"><div class="empty">Press START MONITORING to begin capturing traffic</div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="log-box">
+    <div class="log-head">▸ System Log</div>
+    <div class="log-body" id="logBody"></div>
+  </div>
+</main>
+<script>
+let ticker=null,isLive=false,filters={protocol:'ALL',src_ip:'',dst_ip:''};
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-GB',{hour12:false});},1000);
+function log(msg,cls=''){const b=document.getElementById('logBody'),ts=new Date().toLocaleTimeString('en-GB',{hour12:false}),d=document.createElement('div');d.className='logline';d.innerHTML=`<span class="logts">${ts}</span><span class="logtxt ${cls}">${msg}</span>`;b.prepend(d);while(b.children.length>60)b.removeChild(b.lastChild);}
+function setLive(v){isLive=v;const p=document.getElementById('sPill');p.className='status-pill'+(v?' live':'');document.getElementById('sTxt').textContent=v?'LIVE':'OFFLINE';document.getElementById('btnStart').disabled=v;document.getElementById('btnStop').disabled=!v;}
+async function startMon(){const r=await fetch('/api/start',{method:'POST'}),d=await r.json();if(d.status==='started'){setLive(true);log('Monitoring started — dataset loaded','ok');ticker=setInterval(pull,1000);pull();}}
+async function stopMon(){await fetch('/api/stop',{method:'POST'});setLive(false);clearInterval(ticker);log('Monitoring stopped','warn');}
+async function clearAll(){await fetch('/api/clear',{method:'POST'});document.getElementById('tBody').innerHTML='<tr><td colspan="8"><div class="empty">No data — press START MONITORING</div></td></tr>';['sT','sTC','sUD','sIC','sAV'].forEach(id=>document.getElementById(id).textContent='0');document.getElementById('rcnt').textContent='0 records';log('Data cleared');}
+function applyF(){filters={protocol:document.getElementById('fP').value,src_ip:document.getElementById('fS').value.trim(),dst_ip:document.getElementById('fD').value.trim()};pull();log(`Filter → proto:${filters.protocol} src:${filters.src_ip||'*'} dst:${filters.dst_ip||'*'}`,'info');}
+function resetF(){document.getElementById('fP').value='ALL';document.getElementById('fS').value='';document.getElementById('fD').value='';filters={protocol:'ALL',src_ip:'',dst_ip:''};pull();log('Filters cleared');}
+async function pull(){const p=new URLSearchParams(filters),r=await fetch('/api/packets?'+p),d=await r.json();renderStats(d.stats);renderTable(d.packets);}
+function renderStats(s){document.getElementById('sT').textContent=s.total;document.getElementById('sTC').textContent=s.tcp;document.getElementById('sUD').textContent=s.udp;document.getElementById('sIC').textContent=s.icmp;document.getElementById('sAV').textContent=s.avg_size;}
+function renderTable(pkts){document.getElementById('rcnt').textContent=pkts.length+' records';const tb=document.getElementById('tBody');if(!pkts.length){tb.innerHTML='<tr><td colspan="8"><div class="empty">No packets match the current filter</div></td></tr>';return;}tb.innerHTML=[...pkts].reverse().map(p=>`<tr><td class="t-time">${p.time}</td><td class="t-ip">${p.src_ip}</td><td class="t-port">${p.src_port||'—'}</td><td class="t-ip">${p.dst_ip}</td><td class="t-port">${p.dst_port||'—'}</td><td><span class="proto ${p.protocol}">${p.protocol}</span></td><td><span class="svc">${p.service}</span></td><td class="t-size">${p.packet_size}</td></tr>`).join('');}
+</script>
+</body>
+</html>
